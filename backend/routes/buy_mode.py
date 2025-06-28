@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from services.room_analyzer import RoomAnalyzer
 from services.product_search import ProductSearchService
 from services.appwrite_service import AppwriteService
+from services.mem0_service import Mem0Service
 import asyncio
 
 router = APIRouter(prefix="/api/buy", tags=["buy_mode"])
@@ -12,9 +13,24 @@ room_analyzer = RoomAnalyzer()
 product_search = ProductSearchService()
 appwrite_service = AppwriteService()
 
+# Initialize mem0 service with error handling
+try:
+    mem0_service = Mem0Service()
+    MEM0_ENABLED = True
+    print("Mem0 service enabled with debug logging")
+except Exception as e:
+    print(f"Warning: Mem0 service not available: {str(e)}")
+    mem0_service = None
+    MEM0_ENABLED = False
+
+# Temporarily disable mem0
+# mem0_service = None
+# MEM0_ENABLED = False
+# print("Mem0 service temporarily disabled")
+
 @router.post("/analyze-room")
-async def analyze_room(file: UploadFile = File(...)):
-    """Analyze uploaded room image and provide decoration suggestions"""
+async def analyze_room(file: UploadFile = File(...), user_id: str = "default_user"):
+    """Analyze uploaded room image and provide personalized decoration suggestions"""
     
     # Validate file type
     if not file.content_type.startswith('image/'):
@@ -36,6 +52,25 @@ async def analyze_room(file: UploadFile = File(...)):
         analysis = await room_analyzer.analyze_room_image(image_data)
         print(f"Room analysis completed: {analysis.get('room_type', 'unknown')}")
         
+        # Get personalized suggestions if mem0 is available
+        original_suggestions = analysis['suggestions']
+        if MEM0_ENABLED and mem0_service:
+            try:
+                personalized_suggestions = await mem0_service.get_personalized_suggestions(
+                    user_id, analysis.get('room_type', 'unknown'), original_suggestions
+                )
+                analysis['suggestions'] = personalized_suggestions
+                analysis['personalized'] = True
+                
+                # Store room analysis in mem0 for future personalization
+                await mem0_service.store_room_analysis_preference(user_id, analysis)
+                
+            except Exception as e:
+                print(f"Error with mem0 personalization: {str(e)}")
+                analysis['personalized'] = False
+        else:
+            analysis['personalized'] = False
+        
         # Search for products based on suggestions
         print("Starting product search...")
         products = await product_search.search_products(analysis['suggestions'])
@@ -56,10 +91,20 @@ async def analyze_room(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
 @router.post("/search-product")
-async def search_product(product_name: str, category: str = ""):
-    """Search for specific products"""
+async def search_product(product_name: str, category: str = "", user_id: str = "default_user"):
+    """Search for specific products and learn from user search behavior"""
     try:
         products = await product_search.search_specific_product(product_name, category)
+        
+        # Learn from search interaction
+        if MEM0_ENABLED and mem0_service:
+            try:
+                await mem0_service.learn_from_interaction(user_id, "product_search", {
+                    "query": product_name,
+                    "category": category
+                })
+            except Exception as e:
+                print(f"Error learning from search interaction: {str(e)}")
         
         return JSONResponse(content={
             "success": True,
@@ -71,8 +116,8 @@ async def search_product(product_name: str, category: str = ""):
         raise HTTPException(status_code=500, detail=f"Error searching products: {str(e)}")
 
 @router.get("/suggestions/{room_type}")
-async def get_room_suggestions(room_type: str):
-    """Get general suggestions for a room type"""
+async def get_room_suggestions(room_type: str, user_id: str = "default_user"):
+    """Get personalized suggestions for a room type"""
     
     suggestions_db = {
         "living_room": [
@@ -97,6 +142,15 @@ async def get_room_suggestions(room_type: str):
     if not suggestions:
         raise HTTPException(status_code=404, detail="Room type not found")
     
+    # Learn from room suggestion view
+    if MEM0_ENABLED and mem0_service:
+        try:
+            await mem0_service.learn_from_interaction(user_id, "room_suggestion_view", {
+                "room_type": room_type
+            })
+        except Exception as e:
+            print(f"Error learning from room suggestion view: {str(e)}")
+    
     return JSONResponse(content={
         "success": True,
         "room_type": room_type,
@@ -105,10 +159,10 @@ async def get_room_suggestions(room_type: str):
 
 @router.post("/save-item")
 async def save_item(request_data: dict):
-    """Save a product recommendation to user's saved items"""
+    """Save a product recommendation and learn user preferences"""
     
     try:
-        user_id = request_data.get("user_id", "default_user")  # Get from auth in real app
+        user_id = request_data.get("user_id", "default_user")
         product_data = request_data.get("product", {})
         
         if not product_data:
@@ -116,6 +170,13 @@ async def save_item(request_data: dict):
         
         # Save to Appwrite
         saved_item_id = await appwrite_service.save_buy_recommendation(user_id, product_data)
+        
+        # Store preference in mem0
+        if MEM0_ENABLED and mem0_service:
+            try:
+                await mem0_service.store_saved_item_preference(user_id, product_data)
+            except Exception as e:
+                print(f"Error storing saved item preference: {str(e)}")
         
         return JSONResponse(content={
             "success": True,
@@ -141,3 +202,59 @@ async def get_saved_items(user_id: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting saved items: {str(e)}")
+
+@router.post("/reject-suggestion")
+async def reject_suggestion(request_data: dict):
+    """Record rejected suggestions to improve future recommendations"""
+    
+    try:
+        user_id = request_data.get("user_id", "default_user")
+        rejected_item = request_data.get("item", {})
+        reason = request_data.get("reason", "")
+        
+        if not rejected_item:
+            raise HTTPException(status_code=400, detail="Rejected item data is required")
+        
+        # Store rejection in mem0
+        if MEM0_ENABLED and mem0_service:
+            try:
+                await mem0_service.store_rejected_suggestion(user_id, rejected_item, reason)
+                
+                return JSONResponse(content={
+                    "success": True,
+                    "message": "Feedback recorded! We'll improve future suggestions."
+                })
+            except Exception as e:
+                print(f"Error storing rejected suggestion: {str(e)}")
+                raise HTTPException(status_code=500, detail="Error recording feedback")
+        else:
+            return JSONResponse(content={
+                "success": False,
+                "message": "Personalization service not available"
+            })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error recording rejection: {str(e)}")
+
+@router.get("/user-preferences/{user_id}")
+async def get_user_preferences(user_id: str):
+    """Get user preferences and personalization data"""
+    
+    try:
+        if MEM0_ENABLED and mem0_service:
+            preferences = await mem0_service.get_user_preferences(user_id)
+            
+            return JSONResponse(content={
+                "success": True,
+                "preferences": preferences,
+                "personalization_enabled": True
+            })
+        else:
+            return JSONResponse(content={
+                "success": False,
+                "message": "Personalization service not available",
+                "personalization_enabled": False
+            })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting user preferences: {str(e)}")

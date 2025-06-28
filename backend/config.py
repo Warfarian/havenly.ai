@@ -52,4 +52,13 @@ if not APPWRITE_API_KEY:
     print("Warning: APPWRITE_API_KEY not set")
 
 print(f"Config loaded - APPWRITE_PROJECT_ID: {'✓' if APPWRITE_PROJECT_ID else '✗'}")
-print(f"Config loaded - APPWRITE_API_KEY: {'✓' if APPWRITE_API_KEY else '✗'}")
+print(f"Config loaded - APPWRITE_API_KEY: {'✓' if APPWRITE_API_KEY else '✗'}")
+
+# Mem0 configuration
+MEM0_API_KEY = os.getenv("MEM0_API_KEY")
+
+# Validation
+if not MEM0_API_KEY:
+    print("Warning: MEM0_API_KEY not set - personalization features will be disabled")
+
+print(f"Config loaded - MEM0_API_KEY: {'✓' if MEM0_API_KEY else '✗'}")
