@@ -38,3 +38,18 @@ if not TAVILY_API_KEY:
 
 print(f"Config loaded - NEBIUS_API_KEY: {'✓' if NEBIUS_API_KEY else '✗'}")
 print(f"Config loaded - TAVILY_API_KEY: {'✓' if TAVILY_API_KEY else '✗'}")
+
+# Appwrite configuration
+APPWRITE_ENDPOINT = os.getenv("APPWRITE_ENDPOINT", "https://cloud.appwrite.io/v1")
+APPWRITE_PROJECT_ID = os.getenv("APPWRITE_PROJECT_ID", "685fdd8d0002f0bfc30e")
+APPWRITE_API_KEY = os.getenv("APPWRITE_API_KEY")
+APPWRITE_DATABASE_ID = os.getenv("APPWRITE_DATABASE_ID", "68604cf100315501c071")
+
+# Validation
+if not APPWRITE_PROJECT_ID:
+    print("Warning: APPWRITE_PROJECT_ID not set")
+if not APPWRITE_API_KEY:
+    print("Warning: APPWRITE_API_KEY not set")
+
+print(f"Config loaded - APPWRITE_PROJECT_ID: {'✓' if APPWRITE_PROJECT_ID else '✗'}")
+print(f"Config loaded - APPWRITE_API_KEY: {'✓' if APPWRITE_API_KEY else '✗'}")

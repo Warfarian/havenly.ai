@@ -330,5 +330,5 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
-havenly-implementation-plan.md
-havenly-plan.md
+# havenly-implementation-plan.md
+# havenly-plan.md

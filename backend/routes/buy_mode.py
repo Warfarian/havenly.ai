@@ -2,6 +2,7 @@ from fastapi import APIRouter, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 from services.room_analyzer import RoomAnalyzer
 from services.product_search import ProductSearchService
+from services.appwrite_service import AppwriteService
 import asyncio
 
 router = APIRouter(prefix="/api/buy", tags=["buy_mode"])
@@ -9,6 +10,7 @@ router = APIRouter(prefix="/api/buy", tags=["buy_mode"])
 # Initialize services
 room_analyzer = RoomAnalyzer()
 product_search = ProductSearchService()
+appwrite_service = AppwriteService()
 
 @router.post("/analyze-room")
 async def analyze_room(file: UploadFile = File(...)):
@@ -100,3 +102,42 @@ async def get_room_suggestions(room_type: str):
         "room_type": room_type,
         "suggestions": suggestions
     })
+
+@router.post("/save-item")
+async def save_item(request_data: dict):
+    """Save a product recommendation to user's saved items"""
+    
+    try:
+        user_id = request_data.get("user_id", "default_user")  # Get from auth in real app
+        product_data = request_data.get("product", {})
+        
+        if not product_data:
+            raise HTTPException(status_code=400, detail="Product data is required")
+        
+        # Save to Appwrite
+        saved_item_id = await appwrite_service.save_buy_recommendation(user_id, product_data)
+        
+        return JSONResponse(content={
+            "success": True,
+            "saved_item_id": saved_item_id,
+            "message": "Item saved successfully!"
+        })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving item: {str(e)}")
+
+@router.get("/saved-items/{user_id}")
+async def get_saved_items(user_id: str):
+    """Get all saved items for a user"""
+    
+    try:
+        saved_items = await appwrite_service.get_saved_recommendations(user_id)
+        
+        return JSONResponse(content={
+            "success": True,
+            "saved_items": saved_items,
+            "count": len(saved_items)
+        })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting saved items: {str(e)}")

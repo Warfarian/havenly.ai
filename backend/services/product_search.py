@@ -12,55 +12,76 @@ class ProductSearchService:
         
         for suggestion in suggestions:
             try:
-                # Create more specific search queries for direct product links
+                # Simplified search queries
                 queries = [
-                    f"{suggestion['item']} buy online amazon wayfair target",
-                    f"shop {suggestion['item']} home decor furniture store",
-                    f"{suggestion['item']} price buy now {suggestion['category']}"
+                    f"{suggestion['item']} buy online",
+                    f"shop {suggestion['item']} home decor"
                 ]
                 
                 for query in queries:
-                    # Search using Tavily with more specific parameters
-                    response = self.client.search(
-                        query=query,
-                        search_depth="advanced",
-                        max_results=2,
-                        include_domains=["amazon.com", "wayfair.com", "target.com", "ikea.com", "homedepot.com", "lowes.com", "overstock.com", "cb2.com", "crateandbarrel.com"]
-                    )
-                    
-                    # Process results
-                    for result in response.get('results', []):
-                        # Filter for actual product pages
-                        url = result.get('url', '')
-                        title = result.get('title', '')
+                    try:
+                        # Search using Tavily with simplified parameters
+                        response = self.client.search(
+                            query=query,
+                            search_depth="basic",  # Changed from "advanced"
+                            max_results=3,
+                            # Removed include_domains restriction
+                        )
                         
-                        # Skip if it's just a category page or homepage
-                        if any(skip_term in url.lower() for skip_term in ['/category/', '/categories/', '/search?', '/browse/', 'homepage']):
-                            continue
+                        # Process results
+                        for result in response.get('results', []):
+                            url = result.get('url', '')
+                            title = result.get('title', '')
                             
-                        # Look for product indicators in URL
-                        if any(product_term in url.lower() for product_term in ['/product/', '/p/', '/dp/', '/item/', '/products/']):
-                            product = {
-                                "title": title,
-                                "url": url,
-                                "description": result.get('content', '')[:200] + "...",
-                                "category": suggestion['category'],
-                                "suggestion_item": suggestion['item'],
-                                "priority": suggestion['priority'],
-                                "source": "tavily_search",
-                                "store": self._extract_store_name(url)
-                            }
-                            products.append(product)
-                    
-                    # Limit products per suggestion
-                    if len([p for p in products if p['suggestion_item'] == suggestion['item']]) >= 3:
-                        break
+                            # Basic filtering for product-like content
+                            if title and url:
+                                product = {
+                                    "title": title,
+                                    "url": url,
+                                    "description": result.get('content', '')[:200] + "...",
+                                    "category": suggestion['category'],
+                                    "suggestion_item": suggestion['item'],
+                                    "priority": suggestion['priority'],
+                                    "source": "tavily_search",
+                                    "store": self._extract_store_name(url)
+                                }
+                                products.append(product)
+                        
+                        # Limit products per suggestion
+                        if len([p for p in products if p['suggestion_item'] == suggestion['item']]) >= 2:
+                            break
+                            
+                    except Exception as e:
+                        print(f"Error in Tavily search for query '{query}': {str(e)}")
+                        continue
                         
             except Exception as e:
                 print(f"Error searching for {suggestion['item']}: {str(e)}")
                 continue
         
+        # If no products found, add fallback products
+        if not products:
+            products = self._get_fallback_products(suggestions)
+        
         return products
+    
+    def _get_fallback_products(self, suggestions: List[Dict]) -> List[Dict]:
+        """Provide fallback products when Tavily search fails"""
+        fallback_products = []
+        
+        for suggestion in suggestions[:3]:  # Limit to first 3 suggestions
+            fallback_products.append({
+                "title": f"{suggestion['item'].title()} - Home Decor",
+                "url": f"https://www.amazon.com/s?k={suggestion['item'].replace(' ', '+')}",
+                "description": f"Find great {suggestion['item']} options for your {suggestion['category']} needs.",
+                "category": suggestion['category'],
+                "suggestion_item": suggestion['item'],
+                "priority": suggestion['priority'],
+                "source": "fallback",
+                "store": "Amazon"
+            })
+        
+        return fallback_products
     
     def _extract_store_name(self, url: str) -> str:
         """Extract store name from URL"""
@@ -88,24 +109,24 @@ class ProductSearchService:
     async def search_specific_product(self, product_name: str, category: str = "") -> List[Dict]:
         """Search for a specific product"""
         try:
-            # More specific query for direct product links
-            query = f"{product_name} {category} buy online product page"
+            # Simplified query
+            query = f"{product_name} {category} buy online"
             
             response = self.client.search(
                 query=query,
-                search_depth="advanced",
-                max_results=8,
-                include_domains=["amazon.com", "wayfair.com", "target.com", "ikea.com", "homedepot.com", "lowes.com", "overstock.com", "cb2.com", "crateandbarrel.com"]
+                search_depth="basic",  # Changed from "advanced"
+                max_results=5,
+                # Removed include_domains restriction
             )
             
             products = []
             for result in response.get('results', []):
                 url = result.get('url', '')
+                title = result.get('title', '')
                 
-                # Filter for actual product pages
-                if any(product_term in url.lower() for product_term in ['/product/', '/p/', '/dp/', '/item/', '/products/']):
+                if title and url:
                     product = {
-                        "title": result.get('title', ''),
+                        "title": title,
                         "url": url,
                         "description": result.get('content', '')[:200] + "...",
                         "category": category,
@@ -114,7 +135,27 @@ class ProductSearchService:
                     }
                     products.append(product)
             
+            # Add fallback if no results
+            if not products:
+                products.append({
+                    "title": f"{product_name.title()} - Search Results",
+                    "url": f"https://www.amazon.com/s?k={product_name.replace(' ', '+')}",
+                    "description": f"Find {product_name} options online.",
+                    "category": category,
+                    "source": "fallback",
+                    "store": "Amazon"
+                })
+            
             return products
             
         except Exception as e:
-            raise Exception(f"Error searching for product: {str(e)}")
+            print(f"Error in specific product search: {str(e)}")
+            # Return fallback product
+            return [{
+                "title": f"{product_name.title()} - Search Results",
+                "url": f"https://www.amazon.com/s?k={product_name.replace(' ', '+')}",
+                "description": f"Find {product_name} options online.",
+                "category": category,
+                "source": "fallback",
+                "store": "Amazon"
+            }]

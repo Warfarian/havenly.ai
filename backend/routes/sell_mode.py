@@ -5,6 +5,7 @@ from services.listing_generator import ListingGenerator
 from services.marketplace_automation import MarketplaceAutomation
 from services.negotiation_ai import NegotiationAI
 from services.usethis_automation import UseThisAutomation
+from services.appwrite_service import AppwriteService
 import asyncio
 import uuid
 from typing import Dict, List
@@ -17,6 +18,7 @@ listing_generator = ListingGenerator()
 marketplace_automation = MarketplaceAutomation()
 negotiation_ai = NegotiationAI()
 usethis_automation = UseThisAutomation()
+appwrite_service = AppwriteService()
 
 # Store for tracking extraction jobs
 extraction_jobs: Dict[str, Dict] = {}
@@ -469,25 +471,39 @@ async def create_storefront(request_data: dict):
         failed_listings = []
         
         for item in job["items"]:
-            # Use AI to generate realistic rental listing data
-            listing_data = await generate_usethis_listing_with_ai(item)
-            
-            # Simulate successful posting (fake data)
-            rental_price = max(1, round(item['estimated_price'] / 30, 2))
-            posted_listings.append({
-                "id": item.get("id", str(uuid.uuid4())[:8]),
-                "title": listing_data['title'],
-                "description": listing_data['description'],
-                "original_price": float(item['estimated_price']),
-                "rental_price": rental_price,
-                "category": item.get('category', 'misc'),
-                "condition": item.get('condition', 'good'),
-                "image_data": item.get('frame_data', ''),
-                "status": "live",
-                "platform": "UseThis",
-                "views": listing_data.get('views', 0),
-                "inquiries": listing_data.get('inquiries', 0)
-            })
+            try:
+                # Upload image to Appwrite storage
+                image_url = await appwrite_service.upload_image_to_storage_only(
+                    image_data=item.get('frame_data', ''),
+                    filename=f"{item['name']}_usethis.jpg"
+                )
+                
+                # Use AI to generate realistic rental listing data
+                listing_data = await generate_usethis_listing_with_ai(item)
+                
+                # Simulate successful posting (fake data)
+                rental_price = max(1, round(item['estimated_price'] / 30, 2))
+                posted_listings.append({
+                    "id": item.get("id", str(uuid.uuid4())[:8]),
+                    "title": listing_data['title'],
+                    "description": listing_data['description'],
+                    "original_price": float(item['estimated_price']),
+                    "rental_price": rental_price,
+                    "category": item.get('category', 'misc'),
+                    "condition": item.get('condition', 'good'),
+                    "image_url": image_url,  # Use Appwrite storage URL
+                    "status": "live",
+                    "platform": "UseThis",
+                    "views": listing_data.get('views', 0),
+                    "inquiries": listing_data.get('inquiries', 0)
+                })
+                
+            except Exception as e:
+                print(f"Error processing item '{item['name']}': {str(e)}")
+                failed_listings.append({
+                    "item_name": item['name'],
+                    "error": str(e)
+                })
         
         # Generate success response with fake analytics
         return JSONResponse(content={
@@ -559,12 +575,43 @@ async def process_video_extraction(job_id: str, video_data: bytes, filename: str
         sellable_items = await video_processor.filter_sellable_items(detected_objects)
         extraction_jobs[job_id]["progress"] = 80
         
+        # Save items to Appwrite database
+        user_id = "default_user"  # You can get this from session/auth
+        
+        for item in sellable_items:
+            try:
+                # Upload image to Appwrite
+                image_url = await appwrite_service.upload_image(
+                    image_data=item["frame_data"],
+                    user_id=user_id,
+                    image_type="item_frame",
+                    original_filename=f"{item['name']}_frame.jpg"
+                )
+                
+                # Save item to database
+                item_doc_id = await appwrite_service.save_extracted_item(
+                    item=item,
+                    user_id=user_id,
+                    image_url=image_url
+                )
+                
+                # Update item with database info
+                item["appwrite_doc_id"] = item_doc_id
+                item["image_url"] = image_url
+                
+                print(f"Saved item '{item['name']}' to Appwrite with image URL: {image_url}")
+                
+            except Exception as e:
+                print(f"Error saving item '{item['name']}' to Appwrite: {str(e)}")
+                # Continue with other items even if one fails
+                continue
+        
         # Store results
         extraction_jobs[job_id]["items"] = sellable_items
         extraction_jobs[job_id]["progress"] = 100
         extraction_jobs[job_id]["status"] = "completed"
         
-        print(f"Video extraction completed for job {job_id}: {len(sellable_items)} items found")
+        print(f"Video extraction completed for job {job_id}: {len(sellable_items)} items found and saved to Appwrite")
         
     except Exception as e:
         print(f"Error in video extraction for job {job_id}: {str(e)}")
