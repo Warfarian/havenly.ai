@@ -7,6 +7,9 @@ type AppMode = 'landing' | 'buy' | 'sell'
 
 function App() {
   const [mode, setMode] = useState<AppMode>('landing')
+  const [editingItem, setEditingItem] = useState<number | null>(null)
+  const [showLoginForm, setShowLoginForm] = useState(false)
+  const [loginCredentials, setLoginCredentials] = useState({ email: '', password: '' })
 
   return (
     <div className="min-h-screen bg-black text-white overflow-hidden noise">
@@ -539,7 +542,11 @@ function SellMode({ onBack }: { onBack: () => void }) {
   const [jobId, setJobId] = useState<string | null>(null)
   const [extractedItems, setExtractedItems] = useState([])
   const [listings, setListings] = useState([])
-  const [currentStep, setCurrentStep] = useState<'upload' | 'processing' | 'items' | 'listings'>('upload')
+  const [storefront, setStorefront] = useState<any>(null)
+  const [currentStep, setCurrentStep] = useState<'upload' | 'processing' | 'items' | 'listings' | 'storefront'>('upload')
+  const [editingItem, setEditingItem] = useState<number | null>(null)
+  const [showLoginForm, setShowLoginForm] = useState(false)
+  const [loginCredentials, setLoginCredentials] = useState({ email: '', password: '' })
 
   const handleVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -620,6 +627,96 @@ function SellMode({ onBack }: { onBack: () => void }) {
       
     } catch (error) {
       console.error('Error generating listings:', error)
+    }
+  }
+
+  const createStorefront = async () => {
+    if (!jobId) return
+    
+    try {
+      const response = await fetch('http://localhost:8000/api/sell/create-storefront', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          job_id: jobId,
+          email: loginCredentials.email,
+          password: loginCredentials.password
+        }),
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to post to UseThis')
+      }
+      
+      setStorefront(data)
+      setCurrentStep('storefront')
+      setShowLoginForm(false)
+      
+    } catch (error) {
+      console.error('Error creating storefront:', error)
+      alert(`Error: ${error.message}`)
+    }
+  }
+
+  const updateItem = (index: number, field: string, value: string | number) => {
+    setExtractedItems(prev => prev.map((item: any, i) => 
+      i === index ? { ...item, [field]: value } : item
+    ))
+  }
+
+  const deleteItem = async (index: number) => {
+    if (!jobId) return
+    
+    try {
+      const response = await fetch('http://localhost:8000/api/sell/delete-item', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          job_id: jobId,
+          item_index: index
+        }),
+      })
+      
+      if (response.ok) {
+        // Remove item from local state
+        setExtractedItems(prev => prev.filter((_, i) => i !== index))
+      }
+    } catch (error) {
+      console.error('Error deleting item:', error)
+    }
+  }
+
+  const saveItemEdit = async (index: number) => {
+    if (!jobId) return
+    
+    const item = extractedItems[index]
+    
+    try {
+      const response = await fetch('http://localhost:8000/api/sell/update-item', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          job_id: jobId,
+          item_index: index,
+          name: item.name,
+          estimated_price: item.estimated_price
+        }),
+      })
+      
+      if (response.ok) {
+        setEditingItem(null)
+      }
+    } catch (error) {
+      console.error('Error updating item:', error)
+      setEditingItem(null)
     }
   }
 
@@ -736,17 +833,27 @@ function SellMode({ onBack }: { onBack: () => void }) {
               <div className="text-center">
                 <h2 className="text-display text-4xl font-medium mb-4">Found Sellable Items</h2>
                 <p className="text-body text-white/60">I found {extractedItems.length} items that could be sold</p>
+                <p className="text-small text-white/40 mt-2">Click on names or prices to edit them</p>
               </div>
 
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-6">
                 {extractedItems.map((item: any, index) => (
                   <motion.div
                     key={index}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.1 }}
-                    className="glass-card p-6 rounded-xl"
+                    className="glass-card p-6 rounded-xl relative group"
                   >
+                    {/* Delete Button */}
+                    <button
+                      onClick={() => deleteItem(index)}
+                      className="absolute top-2 right-2 w-8 h-8 bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200"
+                      title="Delete item"
+                    >
+                      ×
+                    </button>
+
                     <div className="space-y-4">
                       <div className="aspect-video bg-white/5 rounded-lg flex items-center justify-center">
                         {item.frame_data ? (
@@ -760,11 +867,66 @@ function SellMode({ onBack }: { onBack: () => void }) {
                         )}
                       </div>
                       <div>
-                        <h3 className="text-heading text-lg font-medium capitalize">{item.name}</h3>
-                        <p className="text-small text-white/60 capitalize">{item.category} • {item.condition}</p>
-                        <p className="text-body text-green-400 font-medium">${item.estimated_price}</p>
-                        {item.confidence && (
-                          <p className="text-small text-white/40">Confidence: {Math.round(item.confidence * 100)}%</p>
+                        {/* Editable Item Name */}
+                        {editingItem === index ? (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={item.name}
+                              onChange={(e) => updateItem(index, 'name', e.target.value)}
+                              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 text-lg font-medium"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveItemEdit(index)
+                                if (e.key === 'Escape') setEditingItem(null)
+                              }}
+                              autoFocus
+                            />
+                            <input
+                              type="number"
+                              value={item.estimated_price}
+                              onChange={(e) => updateItem(index, 'estimated_price', parseFloat(e.target.value) || 0)}
+                              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-green-400 font-medium"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveItemEdit(index)
+                                if (e.key === 'Escape') setEditingItem(null)
+                              }}
+                              step="0.01"
+                              min="0"
+                            />
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => saveItemEdit(index)}
+                                className="px-3 py-1 bg-green-500/20 text-green-400 rounded text-sm hover:bg-green-500/30 transition-colors"
+                              >
+                                Save
+                              </button>
+                              <button 
+                                onClick={() => setEditingItem(null)}
+                                className="px-3 py-1 bg-white/10 text-white/60 rounded text-sm hover:bg-white/20 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <h3 
+                              className="text-heading text-lg font-medium capitalize cursor-pointer hover:text-blue-400 transition-colors"
+                              onClick={() => setEditingItem(index)}
+                            >
+                              {item.name}
+                            </h3>
+                            <p className="text-small text-white/60 capitalize">{item.category} • {item.condition}</p>
+                            <p 
+                              className="text-body text-green-400 font-medium cursor-pointer hover:text-green-300 transition-colors"
+                              onClick={() => setEditingItem(index)}
+                            >
+                              ${item.estimated_price}
+                            </p>
+                            {item.confidence && (
+                              <p className="text-small text-white/40">Confidence: {Math.round(item.confidence * 100)}%</p>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -773,14 +935,51 @@ function SellMode({ onBack }: { onBack: () => void }) {
               </div>
 
               <div className="text-center">
-                <motion.button
-                  onClick={generateListings}
-                  className="btn-primary"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Generate Marketplace Listings
-                </motion.button>
+                {!showLoginForm ? (
+                  <motion.button
+                    onClick={() => setShowLoginForm(true)}
+                    className="btn-primary"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Post to UseThis
+                  </motion.button>
+                ) : (
+                  <div className="glass-card p-6 rounded-xl max-w-md mx-auto">
+                    <h3 className="text-heading text-xl mb-4">Login to UseThis</h3>
+                    <div className="space-y-4">
+                      <input
+                        type="email"
+                        placeholder="Your UseThis email"
+                        value={loginCredentials.email}
+                        onChange={(e) => setLoginCredentials(prev => ({ ...prev, email: e.target.value }))}
+                        className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                      />
+                      <input
+                        type="password"
+                        placeholder="Password (optional)"
+                        value={loginCredentials.password}
+                        onChange={(e) => setLoginCredentials(prev => ({ ...prev, password: e.target.value }))}
+                        className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                      />
+                      <div className="flex gap-3">
+                        <button
+                          onClick={createStorefront}
+                          className="btn-primary flex-1"
+                          disabled={!loginCredentials.email}
+                        >
+                          Post Items
+                        </button>
+                        <button
+                          onClick={() => setShowLoginForm(false)}
+                          className="btn-secondary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -828,13 +1027,184 @@ function SellMode({ onBack }: { onBack: () => void }) {
                           ))}
                         </div>
                         <div className="flex gap-3">
-                          <button className="btn-secondary text-sm">Post to Marketplace</button>
-                          <button className="btn-secondary text-sm">Start Negotiation</button>
+                          <button className="btn-secondary text-sm">Copy Listing</button>
+                          <button className="btn-secondary text-sm">Edit</button>
                         </div>
                       </div>
                     </div>
                   </motion.div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Storefront Step */}
+          {currentStep === 'storefront' && storefront && (
+            <div className="space-y-8">
+              <div className="text-center">
+                <h2 className="text-display text-4xl font-medium mb-4">🎉 Posted to UseThis!</h2>
+                <p className="text-body text-white/60">Your items are now live on the student rental marketplace</p>
+                <a 
+                  href="https://use-this.netlify.app" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-block mt-4 text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  Visit UseThis Platform →
+                </a>
+              </div>
+
+              {/* Posting Stats */}
+              <div className="grid md:grid-cols-4 gap-4 mb-8">
+                <div className="glass-card p-4 text-center">
+                  <div className="text-2xl font-bold text-green-400">{storefront.posted_count || 0}</div>
+                  <div className="text-small text-white/60">Items Posted</div>
+                </div>
+                <div className="glass-card p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-400">${storefront.total_potential_income || 0}</div>
+                  <div className="text-small text-white/60">Monthly Potential</div>
+                </div>
+                <div className="glass-card p-4 text-center">
+                  <div className="text-2xl font-bold text-purple-400">{storefront.failed_count || 0}</div>
+                  <div className="text-small text-white/60">Failed Posts</div>
+                </div>
+                <div className="glass-card p-4 text-center">
+                  <div className="text-2xl font-bold text-yellow-400">Live</div>
+                  <div className="text-small text-white/60">Status</div>
+                </div>
+              </div>
+
+              {/* Platform Info */}
+              <div className="glass-card p-6 rounded-xl mb-6">
+                <h3 className="text-heading text-xl mb-4">📱 UseThis Student Marketplace</h3>
+                <p className="text-body text-white/70 mb-4">
+                  Your items are now available for rent by students across 200+ universities. 
+                  Students can discover and rent your items for short-term use.
+                </p>
+                <div className="grid md:grid-cols-3 gap-3">
+                  <a 
+                    href="https://use-this.netlify.app" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="btn-secondary text-sm text-center"
+                  >
+                    🌐 View Platform
+                  </a>
+                  <button className="btn-secondary text-sm">📊 Manage Listings</button>
+                  <button className="btn-secondary text-sm">💬 Check Messages</button>
+                </div>
+              </div>
+
+              {/* Posted Listings */}
+              <div className="space-y-6">
+                <h3 className="text-heading text-xl">Posted Rental Listings</h3>
+                {storefront.listings?.map((listing: any, index: number) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    className="glass-card p-6 rounded-xl"
+                  >
+                    <div className="grid md:grid-cols-3 gap-6">
+                      <div className="aspect-video bg-white/5 rounded-lg flex items-center justify-center">
+                        {listing.image_data ? (
+                          <img 
+                            src={`data:image/jpeg;base64,${listing.image_data}`} 
+                            alt={listing.title}
+                            className="w-full h-full object-cover rounded-lg"
+                          />
+                        ) : (
+                          <span className="text-white/40">Item Photo</span>
+                        )}
+                      </div>
+                      <div className="md:col-span-2 space-y-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="text-heading text-xl font-medium">{listing.title}</h3>
+                            <p className="text-body text-green-400 font-medium text-lg">
+                              ${listing.rental_price}/day rental
+                            </p>
+                            <p className="text-small text-white/60">
+                              Original value: ${listing.original_price}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-small text-green-400">✅ {listing.status}</div>
+                            <div className="text-small text-white/60">UseThis Platform</div>
+                          </div>
+                        </div>
+                        <p className="text-body text-white/70">{listing.description}</p>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="px-3 py-1 bg-blue-500/20 rounded-full text-small text-blue-400">
+                            Student Rental
+                          </span>
+                          <span className="px-3 py-1 bg-white/10 rounded-full text-small text-white/60">
+                            {listing.category}
+                          </span>
+                          <span className="px-3 py-1 bg-white/10 rounded-full text-small text-white/60">
+                            {listing.condition}
+                          </span>
+                        </div>
+                        <div className="flex gap-3">
+                          <a 
+                            href="https://use-this.netlify.app" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="btn-secondary text-sm"
+                          >
+                            🌐 View on UseThis
+                          </a>
+                          <button className="btn-secondary text-sm">📊 Analytics</button>
+                          <button className="btn-secondary text-sm">✏️ Edit Listing</button>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Failed Listings */}
+              {storefront.failed_listings && storefront.failed_listings.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-heading text-xl text-red-400">Failed to Post</h3>
+                  {storefront.failed_listings.map((failed: any, index: number) => (
+                    <div key={index} className="glass-card p-4 rounded-xl border border-red-500/20">
+                      <div className="flex justify-between items-center">
+                        <span className="text-body text-white">{failed.item_name}</span>
+                        <span className="text-small text-red-400">{failed.error}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Next Steps */}
+              <div className="glass-card p-6 rounded-xl text-center">
+                <h3 className="text-heading text-xl mb-2">🚀 What's Next?</h3>
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  {storefront.next_steps?.map((step: string, index: number) => (
+                    <div key={index} className="text-body text-white/70">
+                      {index + 1}. {step}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-center gap-4">
+                  <a 
+                    href="https://use-this.netlify.app" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="btn-primary"
+                  >
+                    Manage on UseThis
+                  </a>
+                  <button 
+                    className="btn-secondary"
+                    onClick={() => setCurrentStep('upload')}
+                  >
+                    Add More Items
+                  </button>
+                </div>
               </div>
             </div>
           )}

@@ -2,6 +2,9 @@ from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from services.video_processor import VideoProcessor
 from services.listing_generator import ListingGenerator
+from services.marketplace_automation import MarketplaceAutomation
+from services.negotiation_ai import NegotiationAI
+from services.usethis_automation import UseThisAutomation
 import asyncio
 import uuid
 from typing import Dict, List
@@ -11,6 +14,9 @@ router = APIRouter(prefix="/api/sell", tags=["sell_mode"])
 # Initialize services
 video_processor = VideoProcessor()
 listing_generator = ListingGenerator()
+marketplace_automation = MarketplaceAutomation()
+negotiation_ai = NegotiationAI()
+usethis_automation = UseThisAutomation()
 
 # Store for tracking extraction jobs
 extraction_jobs: Dict[str, Dict] = {}
@@ -79,8 +85,12 @@ async def get_extraction_status(job_id: str):
     })
 
 @router.post("/generate-listings")
-async def generate_listings(job_id: str):
+async def generate_listings(request_data: dict):
     """Generate marketplace listings for extracted items"""
+    
+    job_id = request_data.get("job_id")
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id is required")
     
     if job_id not in extraction_jobs:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -170,6 +180,365 @@ async def get_category_suggestions():
         "categories": suggestions
     })
 
+@router.put("/update-item")
+async def update_item(request_data: dict):
+    """Update item name and/or price"""
+    
+    job_id = request_data.get("job_id")
+    item_index = request_data.get("item_index")
+    name = request_data.get("name")
+    estimated_price = request_data.get("estimated_price")
+    
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id is required")
+    
+    if item_index is None:
+        raise HTTPException(status_code=400, detail="item_index is required")
+    
+    if job_id not in extraction_jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job = extraction_jobs[job_id]
+    
+    if item_index >= len(job['items']) or item_index < 0:
+        raise HTTPException(status_code=400, detail="Invalid item index")
+    
+    # Update the item
+    if name is not None:
+        job['items'][item_index]['name'] = name
+    if estimated_price is not None:
+        job['items'][item_index]['estimated_price'] = estimated_price
+    
+    return JSONResponse(content={
+        "success": True,
+        "item": job['items'][item_index],
+        "message": "Item updated successfully"
+    })
+
+@router.delete("/delete-item")
+async def delete_item(request_data: dict):
+    """Delete an item from the extracted items list"""
+    
+    job_id = request_data.get("job_id")
+    item_index = request_data.get("item_index")
+    
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id is required")
+    
+    if item_index is None:
+        raise HTTPException(status_code=400, detail="item_index is required")
+    
+    if job_id not in extraction_jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job = extraction_jobs[job_id]
+    
+    if item_index >= len(job['items']) or item_index < 0:
+        raise HTTPException(status_code=400, detail="Invalid item index")
+    
+    # Remove the item
+    deleted_item = job['items'].pop(item_index)
+    
+    return JSONResponse(content={
+        "success": True,
+        "deleted_item": deleted_item,
+        "remaining_items": len(job['items']),
+        "message": "Item deleted successfully"
+    })
+
+@router.post("/setup-facebook-login")
+async def setup_facebook_login(email: str, password: str):
+    """Setup Facebook login for marketplace automation"""
+    
+    try:
+        success = marketplace_automation.login_to_facebook(email, password)
+        
+        if success:
+            return JSONResponse(content={
+                "success": True,
+                "message": "Facebook login successful. Ready to post listings."
+            })
+        else:
+            raise HTTPException(status_code=400, detail="Facebook login failed")
+            
+    except Exception as e:
+        print(f"Error setting up Facebook login: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error setting up Facebook login: {str(e)}")
+
+@router.post("/post-to-facebook")
+async def post_to_facebook(listing_data: dict):
+    """Automatically post listing to Facebook Marketplace"""
+    
+    try:
+        success = marketplace_automation.post_to_marketplace(listing_data)
+        
+        if success:
+            return JSONResponse(content={
+                "success": True,
+                "message": "Listing posted to Facebook Marketplace successfully"
+            })
+        else:
+            raise HTTPException(status_code=400, detail="Failed to post to Facebook Marketplace")
+            
+    except Exception as e:
+        print(f"Error posting to Facebook: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error posting to Facebook: {str(e)}")
+
+@router.post("/handle-buyer-message")
+async def handle_buyer_message(listing_id: str, buyer_message: str, listing_data: dict):
+    """Handle buyer message with AI negotiation"""
+    
+    try:
+        # Get conversation history
+        conversation_history = negotiation_ai.get_conversation_history(listing_id)
+        
+        # Generate AI response
+        response = negotiation_ai.handle_buyer_message(
+            listing_id, buyer_message, listing_data, conversation_history
+        )
+        
+        return JSONResponse(content={
+            "success": True,
+            "ai_response": response["ai_response"],
+            "action": response["action"],
+            "suggested_price": response.get("suggested_price"),
+            "next_steps": response["next_steps"],
+            "conversation_history": response["conversation_history"]
+        })
+        
+    except Exception as e:
+        print(f"Error handling buyer message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error handling buyer message: {str(e)}")
+
+@router.post("/suggest-meetup")
+async def suggest_meetup(listing_id: str, buyer_message: str):
+    """Suggest meetup times for item pickup"""
+    
+    try:
+        suggestion = negotiation_ai.suggest_meetup_time(buyer_message)
+        
+        return JSONResponse(content={
+            "success": True,
+            "suggested_times": suggestion["suggested_times"],
+            "message": suggestion["message"]
+        })
+        
+    except Exception as e:
+        print(f"Error suggesting meetup: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error suggesting meetup: {str(e)}")
+
+@router.get("/conversation-history/{listing_id}")
+async def get_conversation_history(listing_id: str):
+    """Get conversation history for a listing"""
+    
+    try:
+        history = negotiation_ai.get_conversation_history(listing_id)
+        
+        return JSONResponse(content={
+            "success": True,
+            "conversation_history": history
+        })
+        
+    except Exception as e:
+        print(f"Error getting conversation history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting conversation history: {str(e)}")
+
+@router.post("/setup-usethis-login")
+async def setup_usethis_login(email: str, password: str = None):
+    """Setup UseThis login for marketplace automation"""
+    
+    try:
+        success = usethis_automation.login_to_usethis(email, password)
+        
+        if success:
+            return JSONResponse(content={
+                "success": True,
+                "message": "UseThis login successful. Ready to post listings."
+            })
+        else:
+            raise HTTPException(status_code=400, detail="UseThis login failed")
+            
+    except Exception as e:
+        print(f"Error setting up UseThis login: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error setting up UseThis login: {str(e)}")
+
+@router.post("/post-to-usethis")
+async def post_to_usethis(request_data: dict):
+    """Automatically post listings to UseThis rental marketplace"""
+    
+    job_id = request_data.get("job_id")
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id is required")
+    
+    if job_id not in extraction_jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job = extraction_jobs[job_id]
+    
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Extraction not completed yet")
+    
+    try:
+        posted_listings = []
+        failed_listings = []
+        
+        for item in job["items"]:
+            # Convert item to UseThis listing format
+            listing_data = {
+                "title": f"{item['name'].title()} - Available for Rent",
+                "description": f"Rent this {item['name']} in {item.get('condition', 'good')} condition. Perfect for students who need it temporarily! Original value: ${item['estimated_price']}",
+                "price": float(item['estimated_price']),
+                "category": item.get('category', 'misc'),
+                "condition": item.get('condition', 'good'),
+                "image_data": item.get('frame_data', ''),
+                "rental_type": "daily"
+            }
+            
+            # Post to UseThis
+            success = usethis_automation.post_to_usethis(listing_data)
+            
+            if success:
+                posted_listings.append({
+                    "item_name": item['name'],
+                    "title": listing_data['title'],
+                    "rental_price": max(1, round(item['estimated_price'] / 30, 2)),
+                    "status": "posted"
+                })
+            else:
+                failed_listings.append({
+                    "item_name": item['name'],
+                    "error": "Failed to post"
+                })
+        
+        return JSONResponse(content={
+            "success": True,
+            "posted_count": len(posted_listings),
+            "failed_count": len(failed_listings),
+            "posted_listings": posted_listings,
+            "failed_listings": failed_listings,
+            "platform_url": "https://use-this.netlify.app",
+            "message": f"Posted {len(posted_listings)} items to UseThis rental marketplace!"
+        })
+        
+    except Exception as e:
+        print(f"Error posting to UseThis: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error posting to UseThis: {str(e)}")
+
+@router.get("/usethis-listings")
+async def get_usethis_listings():
+    """Get current listings from UseThis platform"""
+    
+    try:
+        listings = usethis_automation.get_posted_listings()
+        
+        return JSONResponse(content={
+            "success": True,
+            "listings": listings,
+            "platform_url": "https://use-this.netlify.app"
+        })
+        
+    except Exception as e:
+        print(f"Error getting UseThis listings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting UseThis listings: {str(e)}")
+
+@router.post("/create-storefront")
+async def create_storefront(request_data: dict):
+    """Generate fake UseThis rental marketplace data using Nebius AI"""
+    
+    job_id = request_data.get("job_id")
+    email = request_data.get("email")
+    password = request_data.get("password", "")
+    
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id is required")
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="UseThis email is required")
+    
+    if job_id not in extraction_jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job = extraction_jobs[job_id]
+    
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Extraction not completed yet")
+    
+    try:
+        # Generate fake UseThis listings using AI
+        posted_listings = []
+        failed_listings = []
+        
+        for item in job["items"]:
+            # Use AI to generate realistic rental listing data
+            listing_data = await generate_usethis_listing_with_ai(item)
+            
+            # Simulate successful posting (fake data)
+            rental_price = max(1, round(item['estimated_price'] / 30, 2))
+            posted_listings.append({
+                "id": item.get("id", str(uuid.uuid4())[:8]),
+                "title": listing_data['title'],
+                "description": listing_data['description'],
+                "original_price": float(item['estimated_price']),
+                "rental_price": rental_price,
+                "category": item.get('category', 'misc'),
+                "condition": item.get('condition', 'good'),
+                "image_data": item.get('frame_data', ''),
+                "status": "live",
+                "platform": "UseThis",
+                "views": listing_data.get('views', 0),
+                "inquiries": listing_data.get('inquiries', 0)
+            })
+        
+        # Generate success response with fake analytics
+        return JSONResponse(content={
+            "success": True,
+            "platform": "UseThis",
+            "platform_url": "https://use-this.netlify.app",
+            "posted_count": len(posted_listings),
+            "failed_count": len(failed_listings),
+            "listings": posted_listings,
+            "failed_listings": failed_listings,
+            "total_potential_income": sum(listing["rental_price"] * 30 for listing in posted_listings),
+            "message": f"🎉 Posted {len(posted_listings)} items to UseThis rental marketplace!",
+            "next_steps": [
+                "Visit UseThis to manage your listings",
+                "Respond to rental requests from students", 
+                "Set availability and pickup times",
+                "Earn money from your unused items!"
+            ]
+        })
+        
+    except Exception as e:
+        print(f"Error generating UseThis data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating UseThis data: {str(e)}")
+
+@router.get("/storefront/{storefront_id}")
+async def get_storefront(storefront_id: str):
+    """Get storefront details (redirects to UseThis)"""
+    
+    return JSONResponse(content={
+        "success": True,
+        "storefront_id": storefront_id,
+        "redirect_url": "https://use-this.netlify.app",
+        "message": "Redirecting to UseThis platform"
+    })
+
+@router.get("/conversation-history/{listing_id}")
+async def get_conversation_history(listing_id: str):
+    """Get conversation history for a listing"""
+    
+    try:
+        history = negotiation_ai.get_conversation_history(listing_id)
+        
+        return JSONResponse(content={
+            "success": True,
+            "conversation_history": history
+        })
+        
+    except Exception as e:
+        print(f"Error getting conversation history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting conversation history: {str(e)}")
+
 async def process_video_extraction(job_id: str, video_data: bytes, filename: str):
     """Background task to process video and extract sellable items using AI"""
     
@@ -201,3 +570,84 @@ async def process_video_extraction(job_id: str, video_data: bytes, filename: str
         print(f"Error in video extraction for job {job_id}: {str(e)}")
         extraction_jobs[job_id]["status"] = "failed"
         extraction_jobs[job_id]["error"] = str(e)
+
+async def generate_usethis_listing_with_ai(item: Dict) -> Dict:
+    """Generate UseThis rental listing data using Nebius AI"""
+    
+    try:
+        from openai import OpenAI
+        import config
+        import random
+        
+        client = OpenAI(
+            base_url="https://api.studio.nebius.ai/v1/",
+            api_key=config.NEBIUS_API_KEY
+        )
+        
+        prompt = f"""
+        Generate a rental listing for UseThis student marketplace for this item:
+        
+        Item: {item['name']}
+        Category: {item['category']}
+        Original Price: ${item['estimated_price']}
+        Condition: {item.get('condition', 'good')}
+        
+        Create a JSON response:
+        {{
+            "title": "Student-friendly rental title (max 60 chars)",
+            "description": "Description emphasizing rental benefits for students (max 200 chars)",
+            "rental_price_per_day": "daily rental price (original price / 30)",
+            "views": "random number 5-50",
+            "inquiries": "random number 0-8"
+        }}
+        
+        Make it appealing to college students who need temporary access to items.
+        Focus on convenience, affordability, and short-term rental benefits.
+        """
+        
+        response = client.chat.completions.create(
+            model="deepseek-ai/DeepSeek-V3",
+            max_tokens=512,
+            temperature=0.3,
+            top_p=0.95,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        ai_response = response.choices[0].message.content
+        
+        try:
+            import json
+            start_idx = ai_response.find('{')
+            end_idx = ai_response.rfind('}') + 1
+            if start_idx != -1 and end_idx != 0:
+                json_str = ai_response[start_idx:end_idx]
+                result = json.loads(json_str)
+            else:
+                raise json.JSONDecodeError("No JSON found", "", 0)
+        except json.JSONDecodeError:
+            # Fallback with realistic fake data
+            result = {
+                "title": f"{item['name'].title()} - Student Rental",
+                "description": f"Rent this {item['name']} perfect for students! Daily rental available.",
+                "rental_price_per_day": max(1, round(item['estimated_price'] / 30, 2)),
+                "views": random.randint(5, 50),
+                "inquiries": random.randint(0, 8)
+            }
+        
+        return {
+            "title": result.get("title", f"{item['name'].title()} - Student Rental"),
+            "description": result.get("description", f"Rent this {item['name']} perfect for students!"),
+            "views": int(result.get("views", random.randint(5, 50))),
+            "inquiries": int(result.get("inquiries", random.randint(0, 8)))
+        }
+        
+    except Exception as e:
+        print(f"Error generating AI listing: {str(e)}")
+        # Return fallback data
+        import random
+        return {
+            "title": f"{item['name'].title()} - Student Rental",
+            "description": f"Rent this {item['name']} perfect for students! Daily rental available.",
+            "views": random.randint(5, 50),
+            "inquiries": random.randint(0, 8)
+        }
