@@ -87,7 +87,7 @@ function App() {
                   
                   <p>
                     <a 
-                      href="https://youtube.com/watch?v=dQw4w9WgXcQ" 
+                      href="https://youtu.be/NUEluIMwpCk" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-blue-400 hover:text-blue-300 transition-colors underline"

@@ -133,7 +133,7 @@ export function LandingPage({ onModeSelect }: LandingPageProps) {
                 Get Started
               </motion.button>
               <motion.a 
-                href="https://youtube.com/watch?v=dQw4w9WgXcQ"
+                href="https://youtu.be/NUEluIMwpCk"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-secondary relative z-20"
