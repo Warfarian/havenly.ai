@@ -47,8 +47,6 @@ Havenly.ai is an intelligent home assistant that helps you transform your space 
    # Required API Keys
    NEBIUS_API_KEY=your_nebius_api_key
    TAVILY_API_KEY=your_tavily_api_key
-   
-   # Optional Services
    MEM0_API_KEY=your_mem0_api_key
    APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
    APPWRITE_PROJECT_ID=your_project_id

@@ -12,8 +12,9 @@ openai==1.33.0                  # Optional: Claude via proxy if needed
 # Video processing - use headless version for server compatibility
 opencv-python-headless==4.10.0.84
 
-# Data & CSV handling
-pandas==2.2.2
+# Data & CSV handling - use compatible versions
+pandas==1.5.3
+numpy==1.24.3
 python-dotenv==1.0.1
 uuid==1.30
 tqdm==4.66.2
@@ -28,9 +29,6 @@ requests==2.31.0
 
 #tavily
 tavily-python
-
-# Fix NumPy compatibility - ensure < 2.0
-numpy ==1.24.3
 
 # Browser automation for marketplace posting
 selenium==4.15.2
