@@ -132,14 +132,17 @@ export function LandingPage({ onModeSelect }: LandingPageProps) {
               >
                 Get Started
               </motion.button>
-              <motion.button 
+              <motion.a 
+                href="https://youtube.com/watch?v=dQw4w9WgXcQ"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="btn-secondary relative z-20"
                 whileHover={{ scale: 1.05, y: -2 }}
                 whileTap={{ scale: 0.95 }}
                 style={{ pointerEvents: 'auto' }}
               >
                 Watch Demo
-              </motion.button>
+              </motion.a>
             </motion.div>
           </motion.div>
         </motion.div>

@@ -84,6 +84,17 @@ function App() {
                     As a result, we opted to focus on a seamless local demo and documented deployment steps 
                     for future scaling. You can explore the beautiful UI and see how the platform would work!
                   </p>
+                  
+                  <p>
+                    <a 
+                      href="https://youtube.com/watch?v=dQw4w9WgXcQ" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 transition-colors underline"
+                    >
+                      Watch our full demo video
+                    </a> to see Havenly.ai in action locally!
+                  </p>
                 </div>
 
                 <div className="flex items-center justify-center pt-4">
