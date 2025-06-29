@@ -61,4 +61,31 @@ MEM0_API_KEY = os.getenv("MEM0_API_KEY")
 if not MEM0_API_KEY:
     print("Warning: MEM0_API_KEY not set - personalization features will be disabled")
 
-print(f"Config loaded - MEM0_API_KEY: {'✓' if MEM0_API_KEY else '✗'}")
+print(f"Config loaded - MEM0_API_KEY: {'✓' if MEM0_API_KEY else '✗'}")
+
+# eBay configuration
+EBAY_APP_ID = os.getenv("EBAY_APP_ID")  # Client ID
+EBAY_CERT_ID = os.getenv("EBAY_CERT_ID")  # Client Secret
+EBAY_DEV_ID = os.getenv("EBAY_DEV_ID")  # Developer ID
+EBAY_SANDBOX_AUTH_TOKEN = os.getenv("EBAY_SANDBOX_AUTH_TOKEN")  # Sandbox auth token
+EBAY_SANDBOX = os.getenv("EBAY_SANDBOX", "true").lower() == "true"
+
+# eBay API endpoints
+EBAY_BASE_URL = "https://api.sandbox.ebay.com" if EBAY_SANDBOX else "https://api.ebay.com"
+EBAY_OAUTH_URL = "https://api.sandbox.ebay.com/identity/v1/oauth2/token" if EBAY_SANDBOX else "https://api.ebay.com/identity/v1/oauth2/token"
+
+# Validation
+if not EBAY_APP_ID:
+    print("Warning: EBAY_APP_ID not set - eBay features will be disabled")
+if not EBAY_CERT_ID:
+    print("Warning: EBAY_CERT_ID not set - eBay features will be disabled")
+if not EBAY_DEV_ID:
+    print("Warning: EBAY_DEV_ID not set - eBay features will be disabled")
+if not EBAY_SANDBOX_AUTH_TOKEN:
+    print("Warning: EBAY_SANDBOX_AUTH_TOKEN not set - eBay features will be disabled")
+
+print(f"Config loaded - EBAY_APP_ID: {'✓' if EBAY_APP_ID else '✗'}")
+print(f"Config loaded - EBAY_CERT_ID: {'✓' if EBAY_CERT_ID else '✗'}")
+print(f"Config loaded - EBAY_DEV_ID: {'✓' if EBAY_DEV_ID else '✗'}")
+print(f"Config loaded - EBAY_SANDBOX_AUTH_TOKEN: {'✓' if EBAY_SANDBOX_AUTH_TOKEN else '✗'}")
+print(f"eBay Sandbox Mode: {'✓' if EBAY_SANDBOX else '✗'}")

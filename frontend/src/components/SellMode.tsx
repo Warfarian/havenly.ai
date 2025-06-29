@@ -18,14 +18,6 @@ interface ExtractedItem {
   timestamp?: number
 }
 
-interface Listing {
-  title: string
-  price: number
-  description: string
-  image_data?: string
-  keywords?: string[]
-}
-
 interface Storefront {
   posted_count?: number
   total_potential_income?: number
@@ -40,7 +32,6 @@ export function SellMode({ onBack }: SellModeProps) {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [jobId, setJobId] = useState<string | null>(null)
   const [extractedItems, setExtractedItems] = useState<ExtractedItem[]>([])
-  const [listings, setListings] = useState<Listing[]>([])
   const [storefront, setStorefront] = useState<Storefront | null>(null)
   const [currentStep, setCurrentStep] = useState<CurrentStep>('upload')
   const [editingItem, setEditingItem] = useState<number | null>(null)
@@ -232,7 +223,6 @@ export function SellMode({ onBack }: SellModeProps) {
     setUploadProgress(0)
     setJobId(null)
     setExtractedItems([])
-    setListings([])
     setStorefront(null)
     setEditingItem(null)
     setShowLoginForm(false)

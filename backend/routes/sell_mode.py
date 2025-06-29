@@ -555,6 +555,104 @@ async def get_conversation_history(listing_id: str):
         print(f"Error getting conversation history: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting conversation history: {str(e)}")
 
+@router.post("/post-to-ebay")
+async def post_to_ebay(request_data: dict):
+    """Post listings to eBay using official API"""
+    
+    job_id = request_data.get("job_id")
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id is required")
+    
+    if job_id not in extraction_jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    job = extraction_jobs[job_id]
+    
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Extraction not completed yet")
+    
+    try:
+        posted_listings = []
+        failed_listings = []
+        
+        for item in job["items"]:
+            try:
+                # Create eBay listing
+                result = await ebay_service.create_listing(item)
+                
+                if result["success"]:
+                    posted_listings.append({
+                        "item_name": item['name'],
+                        "sku": result["sku"],
+                        "offer_id": result["offer_id"],
+                        "price": item['estimated_price'],
+                        "status": "listed",
+                        "marketplace": "eBay",
+                        "sandbox": result.get("sandbox", True)
+                    })
+                else:
+                    failed_listings.append({
+                        "item_name": item['name'],
+                        "error": result["error"]
+                    })
+                    
+            except Exception as e:
+                failed_listings.append({
+                    "item_name": item['name'],
+                    "error": str(e)
+                })
+        
+        return JSONResponse(content={
+            "success": True,
+            "platform": "eBay",
+            "sandbox_mode": ebay_service.sandbox,
+            "posted_count": len(posted_listings),
+            "failed_count": len(failed_listings),
+            "listings": posted_listings,
+            "failed_listings": failed_listings,
+            "message": f"🎉 Posted {len(posted_listings)} items to eBay{'(Sandbox)' if ebay_service.sandbox else ''}!",
+            "next_steps": [
+                "Monitor your eBay seller dashboard",
+                "Respond to buyer questions",
+                "Manage inventory and pricing",
+                "Track sales and shipping"
+            ]
+        })
+        
+    except Exception as e:
+        print(f"Error posting to eBay: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error posting to eBay: {str(e)}")
+
+@router.get("/ebay-listing-status/{offer_id}")
+async def get_ebay_listing_status(offer_id: str):
+    """Get eBay listing status"""
+    
+    try:
+        status = await ebay_service.get_listing_status(offer_id)
+        
+        return JSONResponse(content={
+            "success": True,
+            "status": status
+        })
+        
+    except Exception as e:
+        print(f"Error getting eBay listing status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting eBay listing status: {str(e)}")
+
+@router.get("/ebay-config")
+async def get_ebay_config():
+    """Get eBay service configuration status"""
+    
+    return JSONResponse(content={
+        "success": True,
+        "enabled": ebay_service.enabled,
+        "sandbox": ebay_service.sandbox,
+        "app_id_configured": bool(ebay_service.app_id),
+        "cert_id_configured": bool(ebay_service.cert_id),
+        "dev_id_configured": bool(ebay_service.dev_id),
+        "auth_token_configured": bool(ebay_service.sandbox_auth_token)
+    })
+
 async def process_video_extraction(job_id: str, video_data: bytes, filename: str):
     """Background task to process video and extract sellable items using AI"""
     
