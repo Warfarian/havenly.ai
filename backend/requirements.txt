@@ -21,7 +21,7 @@ tqdm==4.66.2
 appwrite
 
 # Memory tool
-mem0ai  
+mem0ai
 
 # General
 requests==2.31.0

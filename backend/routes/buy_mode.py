@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from services.room_analyzer import RoomAnalyzer
 from services.product_search import ProductSearchService
 from services.appwrite_service import AppwriteService
+from services.chat_service import ChatService
 from services.mem0_service import Mem0Service
 import asyncio
 
@@ -12,6 +13,7 @@ router = APIRouter(prefix="/api/buy", tags=["buy_mode"])
 room_analyzer = RoomAnalyzer()
 product_search = ProductSearchService()
 appwrite_service = AppwriteService()
+chat_service = ChatService()
 
 # Initialize mem0 service with error handling
 try:
@@ -22,11 +24,7 @@ except Exception as e:
     print(f"Warning: Mem0 service not available: {str(e)}")
     mem0_service = None
     MEM0_ENABLED = False
-
-# Temporarily disable mem0
-# mem0_service = None
-# MEM0_ENABLED = False
-# print("Mem0 service temporarily disabled")
+print("Mem0 service temporarily disabled - installation issue")
 
 @router.post("/analyze-room")
 async def analyze_room(file: UploadFile = File(...), user_id: str = "default_user"):
@@ -258,3 +256,29 @@ async def get_user_preferences(user_id: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting user preferences: {str(e)}")
+
+@router.post("/chat")
+async def handle_chat(request_data: dict):
+    """Handle intelligent chat messages with Mem0 and Tavily"""
+    
+    try:
+        user_id = request_data.get("user_id", "default_user")
+        message = request_data.get("message", "")
+        conversation_history = request_data.get("conversation_history", [])
+        
+        if not message.strip():
+            raise HTTPException(status_code=400, detail="Message is required")
+        
+        # Use intelligent chat service
+        result = await chat_service.handle_chat_message(user_id, message, conversation_history)
+        
+        return JSONResponse(content={
+            "success": True,
+            "response": result["response"],
+            "suggested_actions": result.get("suggested_actions", []),
+            "user_preferences_used": result.get("user_preferences_used", False),
+            "mem0_enabled": result.get("mem0_enabled", False)
+        })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error handling chat: {str(e)}")

@@ -261,6 +261,7 @@ export function LandingPage({ onModeSelect }: LandingPageProps) {
           </motion.p>
         </div>
       </footer>
+
     </motion.div>
   )
 }
